@@ -82,10 +82,7 @@ from alert_manager import AdvancedAlertManager, create_default_alert_rules
 # Notification Service
 from notification_service import NotificationService, AsyncNotificationSender
 
-
-# این خطوط رو تو main.py پیدا کن (حدود خط 70-85):
-
-# به این تغییر بده:
+# Handlers
 try:
     from handlers.user import user_start as start_handler
     from handlers.user import contact_us as help_handler
@@ -98,10 +95,10 @@ try:
     order_callback_handler = None
     
     HANDLERS_AVAILABLE = True
+    logger.info("✅ Handlers loaded successfully")
 except ImportError as e:
     HANDLERS_AVAILABLE = False
-    logging.warning(f"⚠️ handlers not found: {e}")
-# Handlers (فرض می‌کنیم handlers.py وجود دارد)
+    logger.warning(f"⚠️ Handlers not found: {e}")
 
 # Admin Dashboard
 from admin_dashboard import setup_admin_handlers
