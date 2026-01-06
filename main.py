@@ -97,6 +97,7 @@ try:
     from handlers.user import contact_us as help_handler
     from handlers.order import handle_receipt as receipt_handler
     from handlers import setup_user_handlers
+    from handlers.user import cart_increase, cart_decrease
     
     # Inline handlers (فعلا None)
     search_inline_handler = None
