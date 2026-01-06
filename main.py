@@ -23,6 +23,8 @@ import time
 import signal
 from datetime import datetime
 from pathlib import Path
+import functools
+from typing import Callable, Optional, Any
 
 # Telegram imports
 from telegram import Update, BotCommand
