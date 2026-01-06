@@ -647,11 +647,33 @@ def log_function_call(logger: Optional[ContextLogger] = None):
 print("✅ Enhanced Logger module loaded")
 
 
-# ==================== Log Helper Functions ====================
+# ==================== Helper Functions ====================
+
+def log_payment(order_id: int, user_id: int, status: str):
+    """لاگ پرداخت"""
+    logger = get_logger("payment")
+    logger.info(
+        f"Payment {status} for order #{order_id}",
+        user_id=user_id,
+        order_id=order_id,
+        payment_status=status
+    )
+
+
+def log_admin_action(admin_id: int, action: str, details: str = ""):
+    """لاگ عملیات ادمین"""
+    logger = get_logger("admin")
+    logger.info(
+        f"Admin action: {action}",
+        user_id=admin_id,
+        action=action,
+        details=details
+    )
+
 
 def log_user_action(user_id: int, action: str, details: str = ""):
-    """لاگ اکشن کاربر"""
-    logger = get_logger('user_actions')
+    """لاگ عملیات کاربر"""
+    logger = get_logger("user")
     logger.info(
         f"User action: {action}",
         user_id=user_id,
@@ -662,9 +684,9 @@ def log_user_action(user_id: int, action: str, details: str = ""):
 
 def log_order(order_id: int, user_id: int, status: str, amount: float):
     """لاگ سفارش"""
-    logger = get_logger('orders')
+    logger = get_logger("order")
     logger.info(
-        f"Order #{order_id}: {status}",
+        f"Order #{order_id} - Status: {status}, Amount: {amount:,.0f}",
         user_id=user_id,
         order_id=order_id,
         status=status,
@@ -672,12 +694,12 @@ def log_order(order_id: int, user_id: int, status: str, amount: float):
     )
 
 
-def log_discount_usage(user_id: int, code: str, amount: float):
+def log_discount_usage(user_id: int, discount_code: str, amount: float):
     """لاگ استفاده از تخفیف"""
-    logger = get_logger('discounts')
+    logger = get_logger("discount")
     logger.info(
-        f"Discount code used: {code}",
+        f"Discount used: {discount_code}, Amount: {amount:,.0f}",
         user_id=user_id,
-        discount_code=code,
+        discount_code=discount_code,
         discount_amount=amount
     )
