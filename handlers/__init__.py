@@ -1,11 +1,11 @@
 """
-Handlers Package - Export all handlers
+Handlers Package - Simple Export
 """
 
 # User handlers
 from .user import (
-    user_start as start_handler,
-    contact_us as help_handler,
+    user_start,
+    contact_us,
     handle_pack_selection,
     view_cart,
     remove_from_cart,
@@ -16,8 +16,6 @@ from .user import (
     phone_number_received,
     confirm_user_info,
     edit_user_info_for_order,
-    use_old_address,
-    use_new_address,
     view_my_address,
     edit_address,
     handle_shipping_selection,
@@ -38,15 +36,16 @@ from .order import (
     reject_full_order,
     back_to_order_review,
     confirm_modified_order,
-    handle_receipt as receipt_handler,
+    handle_receipt,
     view_payment_receipts,
     confirm_payment,
     reject_payment
 )
 
-# Inline handlers (dummy if not exist)
-search_inline_handler = None
-chosen_inline_result_handler = None
+# Aliases
+start_handler = user_start
+help_handler = contact_us
+receipt_handler = handle_receipt
 
 # Setup function
 def setup_user_handlers(application, db):
@@ -55,11 +54,11 @@ def setup_user_handlers(application, db):
     from states import FULL_NAME, ADDRESS_TEXT, PHONE_NUMBER
     
     # Start command
-    application.add_handler(CommandHandler("start", start_handler))
+    application.add_handler(CommandHandler("start", user_start))
     
     # Help/Contact
-    application.add_handler(CommandHandler("help", help_handler))
-    application.add_handler(MessageHandler(filters.Regex("^📞 تماس با ما$"), help_handler))
+    application.add_handler(CommandHandler("help", contact_us))
+    application.add_handler(MessageHandler(filters.Regex("^📞 تماس با ما$"), contact_us))
     
     # Cart
     application.add_handler(CallbackQueryHandler(view_cart, pattern=r"^view_cart$"))
@@ -103,9 +102,9 @@ def setup_user_handlers(application, db):
     application.add_handler(CallbackQueryHandler(final_edit_order, pattern=r"^final_edit$"))
     
     # Receipt (photo)
-    application.add_handler(MessageHandler(filters.PHOTO, receipt_handler))
+    application.add_handler(MessageHandler(filters.PHOTO, handle_receipt))
     
-    # Order confirmation (admin)
+    # Order management (admin)
     application.add_handler(CallbackQueryHandler(confirm_order, pattern=r"^confirm_order:"))
     application.add_handler(CallbackQueryHandler(reject_order, pattern=r"^reject_order:"))
     application.add_handler(CallbackQueryHandler(remove_item_from_order, pattern=r"^remove_item:"))
@@ -113,7 +112,7 @@ def setup_user_handlers(application, db):
     application.add_handler(CallbackQueryHandler(back_to_order_review, pattern=r"^back_review:"))
     application.add_handler(CallbackQueryHandler(confirm_modified_order, pattern=r"^confirm_modified:"))
     
-    # Payment confirmation
+    # Payment
     application.add_handler(CallbackQueryHandler(confirm_payment, pattern=r"^confirm_payment:"))
     application.add_handler(CallbackQueryHandler(reject_payment, pattern=r"^reject_payment:"))
 
@@ -122,8 +121,5 @@ __all__ = [
     'start_handler',
     'help_handler',
     'setup_user_handlers',
-    'handle_pack_selection',
     'receipt_handler',
-    'search_inline_handler',
-    'chosen_inline_result_handler',
-    ]
+]
