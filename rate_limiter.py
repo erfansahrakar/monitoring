@@ -387,6 +387,15 @@ class EnhancedRateLimiter:
                 window_seconds=60,
                 algorithm=RateLimitAlgorithm.FIXED_WINDOW,
                 action=RateLimitAction.WARN
+            ),
+            # ✅ اضافه شدن قانون order (برای action_limit)
+            RateLimitRule(
+                name="order",
+                limit=3,
+                window_seconds=3600,
+                algorithm=RateLimitAlgorithm.SLIDING_WINDOW,
+                action=RateLimitAction.REJECT,
+                penalty_seconds=300
             )
         ]
         
@@ -783,7 +792,7 @@ class EnhancedRateLimiter:
         report += f"├ Throttled: {stats['throttled_requests']}\n"
         report += f"└ تخطی‌ها: {stats['violations']}\n\n"
         
-        # نرخ‌ها
+        # نرخ‌ ها
         report += "**📈 نرخ‌ها:**\n"
         report += f"├ Allow Rate: {stats['allow_rate']}%\n"
         report += f"└ Rejection Rate: {stats['rejection_rate']}%\n\n"
@@ -841,9 +850,18 @@ class EnhancedRateLimiter:
 
 # ==================== Decorators ====================
 
-def rate_limit(rule_name: str, 
+def rate_limit(rule_name: str = None, 
+              max_requests: int = None,
+              window_seconds: int = None,
               error_message: Optional[str] = None):
-    """Decorator برای اعمال Rate Limit"""
+    """
+    Decorator برای اعمال Rate Limit
+    
+    استفاده:
+        @rate_limit(rule_name="global")
+        یا
+        @rate_limit(max_requests=10, window_seconds=60)
+    """
     def decorator(func):
         import functools
         
@@ -855,10 +873,35 @@ def rate_limit(rule_name: str,
             rate_limiter = context.bot_data.get('rate_limiter')
             
             if rate_limiter:
-                allowed, retry_after, message = rate_limiter.check_rate_limit(
-                    user_id,
-                    rule_name
-                )
+                # اگر rule_name داده شده، از قانون موجود استفاده کن
+                if rule_name:
+                    allowed, retry_after, message = rate_limiter.check_rate_limit(
+                        user_id,
+                        rule_name
+                    )
+                # اگر max_requests داده شده، یک قانون موقت بساز
+                elif max_requests and window_seconds:
+                    temp_rule_name = f"{func.__name__}_rate_limit"
+                    
+                    # بررسی اگر قانون وجود نداره، بسازش
+                    if not rate_limiter.get_rule(temp_rule_name):
+                        temp_rule = RateLimitRule(
+                            name=temp_rule_name,
+                            limit=max_requests,
+                            window_seconds=window_seconds,
+                            algorithm=RateLimitAlgorithm.SLIDING_WINDOW,
+                            action=RateLimitAction.REJECT
+                        )
+                        rate_limiter.add_rule(temp_rule)
+                    
+                    allowed, retry_after, message = rate_limiter.check_rate_limit(
+                        user_id,
+                        temp_rule_name
+                    )
+                else:
+                    # هیچ محدودیتی تعریف نشده، اجازه بده
+                    allowed = True
+                    message = None
                 
                 if not allowed:
                     error_msg = error_message or message
@@ -883,14 +926,135 @@ def rate_limit(rule_name: str,
             rate_limiter = context.bot_data.get('rate_limiter')
             
             if rate_limiter:
+                if rule_name:
+                    allowed, retry_after, message = rate_limiter.check_rate_limit(
+                        user_id,
+                        rule_name
+                    )
+                elif max_requests and window_seconds:
+                    temp_rule_name = f"{func.__name__}_rate_limit"
+                    
+                    if not rate_limiter.get_rule(temp_rule_name):
+                        temp_rule = RateLimitRule(
+                            name=temp_rule_name,
+                            limit=max_requests,
+                            window_seconds=window_seconds,
+                            algorithm=RateLimitAlgorithm.SLIDING_WINDOW,
+                            action=RateLimitAction.REJECT
+                        )
+                        rate_limiter.add_rule(temp_rule)
+                    
+                    allowed, retry_after, message = rate_limiter.check_rate_limit(
+                        user_id,
+                        temp_rule_name
+                    )
+                else:
+                    allowed = True
+                    message = None
+                
+                if not allowed:
+                    error_msg = error_message or message
+                    return None
+            
+            return func(update, context, *args, **kwargs)
+        
+        import asyncio
+        if asyncio.iscoroutinefunction(func):
+            return async_wrapper
+        else:
+            return sync_wrapper
+    
+    return decorator
+
+
+# ✅ اضافه کردن action_limit decorator
+def action_limit(action_name: str,
+                max_requests: int = None,
+                window_seconds: int = None,
+                error_message: Optional[str] = None):
+    """
+    Decorator برای محدود کردن یک عملیات خاص
+    
+    استفاده:
+        @action_limit('order', max_requests=3, window_seconds=3600)
+        async def finalize_order_start(update, context):
+            ...
+    """
+    def decorator(func):
+        import functools
+        
+        @functools.wraps(func)
+        async def async_wrapper(update, context, *args, **kwargs):
+            user_id = update.effective_user.id
+            
+            # دریافت rate_limiter از context
+            rate_limiter = context.bot_data.get('rate_limiter')
+            
+            if rate_limiter:
+                # استفاده از action_name به عنوان rule_name
+                rule_name = action_name
+                
+                # بررسی اگر قانون وجود نداره، بسازش
+                if not rate_limiter.get_rule(rule_name):
+                    if max_requests and window_seconds:
+                        action_rule = RateLimitRule(
+                            name=rule_name,
+                            limit=max_requests,
+                            window_seconds=window_seconds,
+                            algorithm=RateLimitAlgorithm.SLIDING_WINDOW,
+                            action=RateLimitAction.REJECT,
+                            penalty_seconds=300  # 5 دقیقه penalty
+                        )
+                        rate_limiter.add_rule(action_rule)
+                
                 allowed, retry_after, message = rate_limiter.check_rate_limit(
                     user_id,
                     rule_name
                 )
                 
                 if not allowed:
-                    error_msg = error_message or message
-                    # برای sync functions باید خودمان پیام بفرستیم
+                    error_msg = error_message or message or f"⚠️ شما برای {retry_after} ثانیه محدود شده‌اید"
+                    
+                    if update.message:
+                        await update.message.reply_text(error_msg)
+                    elif update.callback_query:
+                        await update.callback_query.answer(
+                            error_msg,
+                            show_alert=True
+                        )
+                    
+                    return None
+            
+            return await func(update, context, *args, **kwargs)
+        
+        @functools.wraps(func)
+        def sync_wrapper(update, context, *args, **kwargs):
+            user_id = update.effective_user.id
+            
+            rate_limiter = context.bot_data.get('rate_limiter')
+            
+            if rate_limiter:
+                rule_name = action_name
+                
+                if not rate_limiter.get_rule(rule_name):
+                    if max_requests and window_seconds:
+                        action_rule = RateLimitRule(
+                            name=rule_name,
+                            limit=max_requests,
+                            window_seconds=window_seconds,
+                            algorithm=RateLimitAlgorithm.SLIDING_WINDOW,
+                            action=RateLimitAction.REJECT,
+                            penalty_seconds=300
+                        )
+                        rate_limiter.add_rule(action_rule)
+                
+                allowed, retry_after, message = rate_limiter.check_rate_limit(
+                    user_id,
+                    rule_name
+                )
+                
+                if not allowed:
+                    error_msg = error_message or message or f"⚠️ شما برای {retry_after} ثانیه محدود شده‌اید"
                     return None
             
             return func(update, context, *args, **kwargs)
