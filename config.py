@@ -42,7 +42,9 @@ def get_env(key: str, default=None, required=True, value_type=str):
     # تبدیل نوع
     try:
         if value_type == bool:
-            return value.lower() in ('true', '1', 'yes', 'on')
+            if isinstance(value, bool):
+                return value
+            return str(value).lower() in ('true', '1', 'yes', 'on')
         elif value_type == int:
             return int(value)
         elif value_type == float:
