@@ -230,6 +230,11 @@ class LogAnalyticsHandler(logging.Handler):
     
     def emit(self, record):
         with self._lock:
+            # فرمت کردن exception اگر موجود است
+            exception_text = None
+            if record.exc_info:
+                exception_text = ''.join(traceback.format_exception(*record.exc_info))
+            
             # ساخت LogEntry
             log_entry = LogEntry(
                 timestamp=datetime.fromtimestamp(record.created),
@@ -237,7 +242,7 @@ class LogAnalyticsHandler(logging.Handler):
                 logger_name=record.name,
                 message=record.getMessage(),
                 context=getattr(record, 'context', {}),
-                exception=self.formatException(record.exc_info) if record.exc_info else None,
+                exception=exception_text,
                 user_id=getattr(record, 'user_id', None),
                 handler_name=getattr(record, 'handler_name', None)
             )
