@@ -8,7 +8,7 @@ from telegram import Update
 from telegram.ext import ContextTypes, ConversationHandler
 from config import MESSAGES
 from validators import Validators
-from logger import log_user_action, log_order, log_discount_usage
+from logger import log_user_action, log_order, log_discount_usage, get_logger
 from states import FULL_NAME, ADDRESS_TEXT, PHONE_NUMBER
 from rate_limiter import rate_limit, action_limit
 from keyboards import (
