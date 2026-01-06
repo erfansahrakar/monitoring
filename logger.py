@@ -645,3 +645,39 @@ def log_function_call(logger: Optional[ContextLogger] = None):
 
 
 print("✅ Enhanced Logger module loaded")
+
+
+# ==================== Log Helper Functions ====================
+
+def log_user_action(user_id: int, action: str, details: str = ""):
+    """لاگ اکشن کاربر"""
+    logger = get_logger('user_actions')
+    logger.info(
+        f"User action: {action}",
+        user_id=user_id,
+        action=action,
+        details=details
+    )
+
+
+def log_order(order_id: int, user_id: int, status: str, amount: float):
+    """لاگ سفارش"""
+    logger = get_logger('orders')
+    logger.info(
+        f"Order #{order_id}: {status}",
+        user_id=user_id,
+        order_id=order_id,
+        status=status,
+        amount=amount
+    )
+
+
+def log_discount_usage(user_id: int, code: str, amount: float):
+    """لاگ استفاده از تخفیف"""
+    logger = get_logger('discounts')
+    logger.info(
+        f"Discount code used: {code}",
+        user_id=user_id,
+        discount_code=code,
+        discount_amount=amount
+    )
