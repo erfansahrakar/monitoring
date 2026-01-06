@@ -269,7 +269,9 @@ class FeatureFlags:
 
 # ==================== Validation ====================
 
-def validate_config() -> tuple[bool, list[str]]:
+from typing import Tuple, List
+
+def validate_config() -> Tuple[bool, List[str]]:
     """
     اعتبارسنجی تنظیمات
     
