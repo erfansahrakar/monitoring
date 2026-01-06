@@ -237,7 +237,7 @@ class LogAnalyticsHandler(logging.Handler):
                 logger_name=record.name,
                 message=record.getMessage(),
                 context=getattr(record, 'context', {}),
-                exception=self.format(record.exc_info) if record.exc_info else None,
+                exception=self.formatException(record.exc_info) if record.exc_info else None,
                 user_id=getattr(record, 'user_id', None),
                 handler_name=getattr(record, 'handler_name', None)
             )
