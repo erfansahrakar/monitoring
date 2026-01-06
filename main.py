@@ -82,6 +82,15 @@ from alert_manager import AdvancedAlertManager, create_default_alert_rules
 # Notification Service
 from notification_service import NotificationService, AsyncNotificationSender
 
+# Setup logger
+logger_manager = setup_logging(
+    app_name="ShopBot",
+    log_folder=LOG_FOLDER,
+    log_level="INFO"
+)
+logger = get_logger(__name__)
+
+
 # Handlers
 try:
     from handlers.user import user_start as start_handler
@@ -102,14 +111,6 @@ except ImportError as e:
 
 # Admin Dashboard
 from admin_dashboard import setup_admin_handlers
-
-# Setup logger
-logger_manager = setup_logging(
-    app_name="ShopBot",
-    log_folder=LOG_FOLDER,
-    log_level="INFO"
-)
-logger = get_logger(__name__)
 
 
 # ==================== Bot Application ====================
