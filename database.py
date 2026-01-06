@@ -251,7 +251,9 @@ class EnhancedDatabaseManager:
                 logger.error(f"❌ Error closing main connection: {e}")
         
         logger.info("✅ All database connections closed")
-    
+
+
+
     # ==================== Query Execution ====================
     
     def execute(self, query: str, params: tuple = (), 
@@ -367,12 +369,6 @@ class EnhancedDatabaseManager:
         """نرمال کردن کوئری برای tracking"""
         # حذف فضاهای اضافی
         normalized = ' '.join(query.split())
-        
-        # جایگزینی مقادیر با placeholder
-        # این کار باعث می‌شود کوئری‌های مشابه گروه‌بندی شوند
-        # مثلاً: SELECT * FROM users WHERE id=1 و SELECT * FROM users WHERE id=2
-        # هر دو به: SELECT * FROM users WHERE id=? تبدیل می‌شوند
-        
         return normalized[:200]  # محدود به 200 کاراکتر
     
     # ==================== Transaction Management ====================
@@ -457,6 +453,363 @@ class EnhancedDatabaseManager:
         
         if expired_keys:
             logger.info(f"🧹 Cleaned {len(expired_keys)} expired cache entries")
+    
+    # ==================== User Management ====================
+    
+    def add_user(self, user_id: int, username: str = None, first_name: str = None):
+        """اضافه کردن یا بروزرسانی کاربر"""
+        try:
+            self.cursor.execute("""
+                INSERT OR IGNORE INTO users (user_id, username, full_name, created_at)
+                VALUES (?, ?, ?, CURRENT_TIMESTAMP)
+            """, (user_id, username, first_name))
+            
+            # اگر قبلاً وجود داشت، username و full_name رو بروز کن
+            if self.cursor.rowcount == 0:
+                self.cursor.execute("""
+                    UPDATE users 
+                    SET username = ?, full_name = ?, last_active = CURRENT_TIMESTAMP
+                    WHERE user_id = ?
+                """, (username, first_name, user_id))
+            
+            self.conn.commit()
+            return True
+        except Exception as e:
+            logger.error(f"❌ Error adding user {user_id}: {e}")
+            return False
+    
+    def get_user(self, user_id: int):
+        """دریافت اطلاعات کاربر"""
+        try:
+            result = self.execute(
+                "SELECT * FROM users WHERE user_id = ?",
+                (user_id,),
+                use_cache=True,
+                cache_ttl=60
+            )
+            return result[0] if result else None
+        except Exception as e:
+            logger.error(f"❌ Error getting user {user_id}: {e}")
+            return None
+    
+    def update_user_info(self, user_id: int, phone: str = None, address: str = None, 
+                         full_name: str = None, landline: str = None, shop_name: str = None):
+        """بروزرسانی اطلاعات کاربر"""
+        try:
+            updates = []
+            params = []
+            
+            if full_name is not None:
+                updates.append("full_name = ?")
+                params.append(full_name)
+            if phone is not None:
+                updates.append("phone = ?")
+                params.append(phone)
+            if address is not None:
+                updates.append("address = ?")
+                params.append(address)
+            
+            if not updates:
+                return True
+            
+            # اضافه کردن ستون‌های اضافی اگر نیاز باشه
+            updates.append("last_active = CURRENT_TIMESTAMP")
+            params.append(user_id)
+            
+            self.cursor.execute(f"""
+                UPDATE users 
+                SET {', '.join(updates)}
+                WHERE user_id = ?
+            """, params)
+            
+            self.conn.commit()
+            return True
+        except Exception as e:
+            logger.error(f"❌ Error updating user {user_id}: {e}")
+            return False
+    
+    # ==================== Cart Management ====================
+    
+    def get_cart(self, user_id: int):
+        """دریافت سبد خرید کاربر"""
+        try:
+            result = self.execute("""
+                SELECT c.id, p.name, pk.name, pk.quantity, pk.price, c.quantity
+                FROM cart c
+                JOIN packs pk ON c.pack_id = pk.id
+                JOIN products p ON pk.product_id = p.id
+                WHERE c.user_id = ?
+            """, (user_id,))
+            return result
+        except Exception as e:
+            logger.error(f"❌ Error getting cart for user {user_id}: {e}")
+            return []
+    
+    def add_to_cart(self, user_id: int, product_id: int, pack_id: int, quantity: int = 1):
+        """اضافه کردن به سبد خرید"""
+        try:
+            # چک کن آیا قبلاً وجود داره
+            self.cursor.execute("""
+                SELECT id, quantity FROM cart 
+                WHERE user_id = ? AND pack_id = ?
+            """, (user_id, pack_id))
+            
+            existing = self.cursor.fetchone()
+            
+            if existing:
+                # اگه وجود داره، تعداد رو اضافه کن
+                new_qty = existing[1] + quantity
+                self.cursor.execute("""
+                    UPDATE cart SET quantity = ? WHERE id = ?
+                """, (new_qty, existing[0]))
+            else:
+                # اگه نه، رکورد جدید بساز
+                self.cursor.execute("""
+                    INSERT INTO cart (user_id, product_id, pack_id, quantity)
+                    VALUES (?, ?, ?, ?)
+                """, (user_id, product_id, pack_id, quantity))
+            
+            self.conn.commit()
+            return True
+        except Exception as e:
+            logger.error(f"❌ Error adding to cart: {e}")
+            return False
+    
+    def remove_from_cart(self, cart_id: int):
+        """حذف از سبد خرید"""
+        try:
+            self.cursor.execute("DELETE FROM cart WHERE id = ?", (cart_id,))
+            self.conn.commit()
+            return True
+        except Exception as e:
+            logger.error(f"❌ Error removing from cart: {e}")
+            return False
+    
+    def clear_cart(self, user_id: int):
+        """خالی کردن سبد خرید"""
+        try:
+            self.cursor.execute("DELETE FROM cart WHERE user_id = ?", (user_id,))
+            self.conn.commit()
+            return True
+        except Exception as e:
+            logger.error(f"❌ Error clearing cart: {e}")
+            return False
+    
+    # ==================== Product Management ====================
+    
+    def get_product(self, product_id: int):
+        """دریافت محصول"""
+        try:
+            result = self.execute(
+                "SELECT * FROM products WHERE id = ?",
+                (product_id,),
+                use_cache=True,
+                cache_ttl=300
+            )
+            return result[0] if result else None
+        except Exception as e:
+            logger.error(f"❌ Error getting product {product_id}: {e}")
+            return None
+    
+    def get_pack(self, pack_id: int):
+        """دریافت پک"""
+        try:
+            result = self.execute(
+                "SELECT * FROM packs WHERE id = ?",
+                (pack_id,),
+                use_cache=True,
+                cache_ttl=300
+            )
+            return result[0] if result else None
+        except Exception as e:
+            logger.error(f"❌ Error getting pack {pack_id}: {e}")
+            return None
+    
+    def get_packs(self, product_id: int):
+        """دریافت پک‌های یک محصول"""
+        try:
+            result = self.execute(
+                "SELECT * FROM packs WHERE product_id = ? AND is_available = 1",
+                (product_id,),
+                use_cache=True,
+                cache_ttl=300
+            )
+            return result
+        except Exception as e:
+            logger.error(f"❌ Error getting packs for product {product_id}: {e}")
+            return []
+
+
+    # ==================== Order Management ====================
+    
+    def create_order(self, user_id: int, items: list, total_price: float,
+                     discount_amount: float = 0, final_price: float = None,
+                     discount_code: str = None):
+        """ایجاد سفارش"""
+        try:
+            if final_price is None:
+                final_price = total_price - discount_amount
+            
+            # ذخیره items به صورت JSON
+            items_json = json.dumps(items, ensure_ascii=False)
+            
+            self.cursor.execute("""
+                INSERT INTO orders 
+                (user_id, items, total_price, discount_amount, final_price, discount_code, status)
+                VALUES (?, ?, ?, ?, ?, ?, 'pending')
+            """, (user_id, items_json, total_price, discount_amount, final_price, discount_code))
+            
+            self.conn.commit()
+            return self.cursor.lastrowid
+        except Exception as e:
+            logger.error(f"❌ Error creating order: {e}")
+            return None
+    
+    def get_order(self, order_id: int):
+        """دریافت سفارش"""
+        try:
+            result = self.execute(
+                "SELECT * FROM orders WHERE id = ?",
+                (order_id,)
+            )
+            return result[0] if result else None
+        except Exception as e:
+            logger.error(f"❌ Error getting order {order_id}: {e}")
+            return None
+    
+    def get_user_orders(self, user_id: int):
+        """دریافت سفارشات کاربر"""
+        try:
+            result = self.execute(
+                "SELECT * FROM orders WHERE user_id = ? ORDER BY created_at DESC",
+                (user_id,)
+            )
+            return result
+        except Exception as e:
+            logger.error(f"❌ Error getting orders for user {user_id}: {e}")
+            return []
+    
+    def get_pending_orders(self):
+        """دریافت سفارشات در انتظار"""
+        try:
+            result = self.execute(
+                "SELECT * FROM orders WHERE status = 'pending' ORDER BY created_at ASC"
+            )
+            return result
+        except Exception as e:
+            logger.error(f"❌ Error getting pending orders: {e}")
+            return []
+    
+    def get_waiting_payment_orders(self):
+        """دریافت سفارشات در انتظار پرداخت"""
+        try:
+            result = self.execute(
+                "SELECT * FROM orders WHERE status = 'waiting_payment' ORDER BY created_at ASC"
+            )
+            return result
+        except Exception as e:
+            logger.error(f"❌ Error getting waiting payment orders: {e}")
+            return []
+    
+    def update_order_status(self, order_id: int, status: str):
+        """بروزرسانی وضعیت سفارش"""
+        try:
+            self.cursor.execute("""
+                UPDATE orders 
+                SET status = ?, updated_at = CURRENT_TIMESTAMP
+                WHERE id = ?
+            """, (status, order_id))
+            
+            self.conn.commit()
+            return True
+        except Exception as e:
+            logger.error(f"❌ Error updating order status: {e}")
+            return False
+    
+    def add_receipt(self, order_id: int, photo_id: str):
+        """اضافه کردن رسید به سفارش"""
+        try:
+            self.cursor.execute("""
+                UPDATE orders 
+                SET payment_image_id = ?, updated_at = CURRENT_TIMESTAMP
+                WHERE id = ?
+            """, (photo_id, order_id))
+            
+            self.conn.commit()
+            return True
+        except Exception as e:
+            logger.error(f"❌ Error adding receipt: {e}")
+            return False
+    
+    def update_shipping_method(self, order_id: int, method: str):
+        """بروزرسانی نحوه ارسال"""
+        try:
+            self.cursor.execute("""
+                UPDATE orders 
+                SET shipping_method = ?, updated_at = CURRENT_TIMESTAMP
+                WHERE id = ?
+            """, (method, order_id))
+            
+            self.conn.commit()
+            return True
+        except Exception as e:
+            logger.error(f"❌ Error updating shipping method: {e}")
+            return False
+    
+    def delete_order(self, order_id: int):
+        """حذف سفارش"""
+        try:
+            self.cursor.execute("DELETE FROM orders WHERE id = ?", (order_id,))
+            self.conn.commit()
+            return True
+        except Exception as e:
+            logger.error(f"❌ Error deleting order: {e}")
+            return False
+    
+    # ==================== Discount Management ====================
+    
+    def get_discount(self, code: str):
+        """دریافت کد تخفیف"""
+        try:
+            result = self.execute(
+                "SELECT * FROM discount_codes WHERE code = ? AND is_active = 1",
+                (code,),
+                use_cache=True,
+                cache_ttl=60
+            )
+            return result[0] if result else None
+        except Exception as e:
+            logger.error(f"❌ Error getting discount code: {e}")
+            return None
+    
+    def use_discount(self, user_id: int, code: str, order_id: int):
+        """استفاده از کد تخفیف"""
+        try:
+            # دریافت discount_code_id
+            discount = self.get_discount(code)
+            if not discount:
+                return False
+            
+            discount_id = discount[0]
+            
+            # ثبت استفاده
+            self.cursor.execute("""
+                INSERT INTO discount_usage (discount_code_id, user_id, order_id)
+                VALUES (?, ?, ?)
+            """, (discount_id, user_id, order_id))
+            
+            # افزایش تعداد استفاده
+            self.cursor.execute("""
+                UPDATE discount_codes 
+                SET current_uses = current_uses + 1
+                WHERE id = ?
+            """, (discount_id,))
+            
+            self.conn.commit()
+            return True
+        except Exception as e:
+            logger.error(f"❌ Error using discount: {e}")
+            return False
     
     # ==================== Backup Management ====================
     
@@ -744,7 +1097,6 @@ class EnhancedDatabaseManager:
         """گزارش کامل دیتابیس"""
         stats = self.get_statistics()
         db_info = self.get_database_info()
-        top_queries = self.get_top_queries(5)
         
         report = "💾 **گزارش دیتابیس**\n"
         report += "═" * 40 + "\n\n"
@@ -763,41 +1115,6 @@ class EnhancedDatabaseManager:
         report += f"├ موفق: {q['successful']}\n"
         report += f"├ ناموفق: {q['failed']}\n"
         report += f"└ نرخ موفقیت: {q['success_rate']}%\n\n"
-        
-        # عملکرد
-        report += "**⚡ عملکرد:**\n"
-        p = stats['performance']
-        report += f"├ میانگین: {p['avg_query_time_ms']:.2f} ms\n"
-        report += f"├ کل زمان: {p['total_time_ms']:.2f} ms\n"
-        report += f"└ کوئری‌های کند: {p['slow_queries_count']}\n\n"
-        
-        # کش
-        report += "**💾 کش:**\n"
-        c = stats['cache']
-        report += f"├ Hits: {c['hits']}\n"
-        report += f"├ Misses: {c['misses']}\n"
-        report += f"├ Hit Rate: {c['hit_rate']}%\n"
-        report += f"└ آیتم‌های کش: {c['cached_items']}\n\n"
-        
-        # Transaction
-        report += "**🔄 Transaction:**\n"
-        t = stats['transactions']
-        report += f"├ کل: {t['total']}\n"
-        report += f"└ Rollback: {t['rollbacks']}\n\n"
-        
-        # Connection Pool
-        report += "**🔗 Connection Pool:**\n"
-        conn = stats['connections']
-        report += f"├ اندازه Pool: {conn['pool_size']}\n"
-        report += f"└ فعال: {conn['active']}\n\n"
-        
-        # پرکاربردترین کوئری‌ها
-        if top_queries:
-            report += "**🔥 پرکاربردترین کوئری‌ها:**\n"
-            for i, q in enumerate(top_queries[:3], 1):
-                report += f"{i}. {q['execution_count']} بار - "
-                report += f"{q['avg_time_ms']:.1f}ms میانگین\n"
-            report += "\n"
         
         report += "═" * 40
         
@@ -930,7 +1247,6 @@ def initialize_database(db: EnhancedDatabaseManager):
         )
     ''')
     
-    # ایندکس برای جستجوی سریع
     db.execute('CREATE INDEX IF NOT EXISTS idx_users_user_id ON users(user_id)')
     db.execute('CREATE INDEX IF NOT EXISTS idx_users_created ON users(created_at)')
     
@@ -970,27 +1286,42 @@ def initialize_database(db: EnhancedDatabaseManager):
     
     db.execute('CREATE INDEX IF NOT EXISTS idx_packs_product ON packs(product_id)')
     
-    # جدول سفارشات
+    # جدول سبد خرید (🆕 اضافه شد)
     db.execute('''
-        CREATE TABLE IF NOT EXISTS orders (
+        CREATE TABLE IF NOT EXISTS cart (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             user_id INTEGER NOT NULL,
             product_id INTEGER NOT NULL,
             pack_id INTEGER NOT NULL,
-            quantity INTEGER NOT NULL,
+            quantity INTEGER DEFAULT 1,
+            added_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            FOREIGN KEY (user_id) REFERENCES users (user_id),
+            FOREIGN KEY (product_id) REFERENCES products (id),
+            FOREIGN KEY (pack_id) REFERENCES packs (id)
+        )
+    ''')
+    
+    db.execute('CREATE INDEX IF NOT EXISTS idx_cart_user ON cart(user_id)')
+    
+    # جدول سفارشات (🆕 بروز شده با ستون items)
+    db.execute('''
+        CREATE TABLE IF NOT EXISTS orders (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            user_id INTEGER NOT NULL,
+            items TEXT NOT NULL,
             total_price REAL NOT NULL,
             discount_amount REAL DEFAULT 0,
             final_price REAL NOT NULL,
             discount_code TEXT,
             status TEXT DEFAULT 'pending',
             payment_image_id TEXT,
+            shipping_method TEXT,
             admin_note TEXT,
             created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
             updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            expires_at TIMESTAMP,
             confirmed_at TIMESTAMP,
-            FOREIGN KEY (user_id) REFERENCES users (user_id),
-            FOREIGN KEY (product_id) REFERENCES products (id),
-            FOREIGN KEY (pack_id) REFERENCES packs (id)
+            FOREIGN KEY (user_id) REFERENCES users (user_id)
         )
     ''')
     
@@ -1034,7 +1365,7 @@ def initialize_database(db: EnhancedDatabaseManager):
     db.execute('CREATE INDEX IF NOT EXISTS idx_usage_user ON discount_usage(user_id)')
     db.execute('CREATE INDEX IF NOT EXISTS idx_usage_code ON discount_usage(discount_code_id)')
     
-    # جدول لاگ فعالیت‌ها (برای آنالیز)
+    # جدول لاگ فعالیت‌ها
     db.execute('''
         CREATE TABLE IF NOT EXISTS activity_log (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -1052,113 +1383,6 @@ def initialize_database(db: EnhancedDatabaseManager):
     
     # آنالیز برای بهینه‌سازی
     db.analyze_database()
-
-
-# ==================== Migration System ====================
-
-@dataclass
-class Migration:
-    """یک Migration"""
-    version: int
-    name: str
-    up_sql: str
-    down_sql: str = ""
-    
-    def apply(self, db: EnhancedDatabaseManager):
-        """اعمال Migration"""
-        try:
-            logger.info(f"🔄 Applying migration {self.version}: {self.name}")
-            db.execute(self.up_sql)
-            logger.info(f"✅ Migration {self.version} applied")
-            return True
-        except Exception as e:
-            logger.error(f"❌ Migration {self.version} failed: {e}")
-            return False
-    
-    def rollback(self, db: EnhancedDatabaseManager):
-        """Rollback Migration"""
-        if not self.down_sql:
-            logger.warning(f"⚠️ No rollback SQL for migration {self.version}")
-            return False
-        
-        try:
-            logger.info(f"⏪ Rolling back migration {self.version}")
-            db.execute(self.down_sql)
-            logger.info(f"✅ Migration {self.version} rolled back")
-            return True
-        except Exception as e:
-            logger.error(f"❌ Rollback failed for migration {self.version}: {e}")
-            return False
-
-
-class MigrationManager:
-    """مدیریت Migration‌ها"""
-    
-    def __init__(self, db: EnhancedDatabaseManager):
-        self.db = db
-        self.migrations: List[Migration] = []
-        
-        # ایجاد جدول migrations
-        self._create_migrations_table()
-    
-    def _create_migrations_table(self):
-        """ایجاد جدول migrations"""
-        self.db.execute('''
-            CREATE TABLE IF NOT EXISTS migrations (
-                version INTEGER PRIMARY KEY,
-                name TEXT NOT NULL,
-                applied_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-            )
-        ''')
-    
-    def add_migration(self, migration: Migration):
-        """اضافه کردن Migration"""
-        self.migrations.append(migration)
-        self.migrations.sort(key=lambda m: m.version)
-    
-    def get_current_version(self) -> int:
-        """دریافت نسخه فعلی"""
-        result = self.db.execute(
-            'SELECT MAX(version) FROM migrations',
-            use_cache=False
-        )
-        
-        version = result[0][0] if result and result[0][0] else 0
-        return version
-    
-    def migrate(self, target_version: Optional[int] = None):
-        """اجرای Migration‌ها"""
-        current = self.get_current_version()
-        
-        if target_version is None:
-            target_version = max(m.version for m in self.migrations) if self.migrations else 0
-        
-        logger.info(f"🔄 Migrating from version {current} to {target_version}")
-        
-        # Migration‌های باید اعمال شوند
-        pending = [
-            m for m in self.migrations
-            if current < m.version <= target_version
-        ]
-        
-        if not pending:
-            logger.info("✅ Database is up to date")
-            return
-        
-        # اعمال Migration‌ها
-        for migration in pending:
-            if migration.apply(self.db):
-                # ثبت در جدول migrations
-                self.db.execute(
-                    'INSERT INTO migrations (version, name) VALUES (?, ?)',
-                    (migration.version, migration.name)
-                )
-            else:
-                logger.error(f"❌ Migration stopped at version {migration.version}")
-                break
-        
-        new_version = self.get_current_version()
-        logger.info(f"✅ Migration completed. Current version: {new_version}")
 
 
 # ==================== Helper Functions ====================
@@ -1183,32 +1407,7 @@ def setup_database(db_name: str = "shop_bot.db") -> EnhancedDatabaseManager:
     return db
 
 
-# ==================== Example Migrations ====================
-
-def get_example_migrations() -> List[Migration]:
-    """مثال Migration‌ها"""
-    return [
-        Migration(
-            version=1,
-            name="add_user_preferences",
-            up_sql='''
-                ALTER TABLE users ADD COLUMN preferences TEXT DEFAULT '{}'
-            ''',
-            down_sql='''
-                ALTER TABLE users DROP COLUMN preferences
-            '''
-        ),
-        Migration(
-            version=2,
-            name="add_product_tags",
-            up_sql='''
-                ALTER TABLE products ADD COLUMN tags TEXT DEFAULT ''
-            ''',
-            down_sql='''
-                ALTER TABLE products DROP COLUMN tags
-            '''
-        ),
-    ]
-
-
 logger.info("✅ Enhanced Database module loaded")
+
+
+
