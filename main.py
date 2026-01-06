@@ -82,22 +82,26 @@ from alert_manager import AdvancedAlertManager, create_default_alert_rules
 # Notification Service
 from notification_service import NotificationService, AsyncNotificationSender
 
-# Handlers (فرض می‌کنیم handlers.py وجود دارد)
-# اگر نداری، باید بسازیش
+
+# این خطوط رو تو main.py پیدا کن (حدود خط 70-85):
+
+# به این تغییر بده:
 try:
-    from handlers import (
-        start_handler,
-        help_handler,
-        search_inline_handler,
-        chosen_inline_result_handler,
-        order_callback_handler,
-        receipt_handler,
-        setup_user_handlers
-    )
+    from handlers.user import user_start as start_handler
+    from handlers.user import contact_us as help_handler
+    from handlers.order import handle_receipt as receipt_handler
+    from handlers import setup_user_handlers
+    
+    # Inline handlers (فعلا None)
+    search_inline_handler = None
+    chosen_inline_result_handler = None
+    order_callback_handler = None
+    
     HANDLERS_AVAILABLE = True
-except ImportError:
+except ImportError as e:
     HANDLERS_AVAILABLE = False
-    logging.warning("⚠️ handlers.py not found - using minimal handlers")
+    logging.warning(f"⚠️ handlers not found: {e}")
+# Handlers (فرض می‌کنیم handlers.py وجود دارد)
 
 # Admin Dashboard
 from admin_dashboard import setup_admin_handlers
